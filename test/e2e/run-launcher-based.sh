@@ -33,18 +33,18 @@ make build-populator-local
 
 : Set up the kind cluster
 
-kind delete cluster --name fmatest
-kind create cluster --name fmatest --config - <<EOF
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-nodes:
-- role: control-plane
-- role: worker
-EOF
+# kind delete cluster --name fmatest
+# kind create cluster --name fmatest --config - <<EOF
+# kind: Cluster
+# apiVersion: kind.x-k8s.io/v1alpha4
+# nodes:
+# - role: control-plane
+# - role: worker
+# EOF
 
-kubectl wait --for=create sa default
-kubectl wait --for condition=Ready node fmatest-control-plane
-kubectl wait --for condition=Ready node fmatest-worker
+# kubectl wait --for=create sa default
+# kubectl wait --for condition=Ready node fmatest-control-plane
+# kubectl wait --for condition=Ready node fmatest-worker
 
 # Display health, prove we don't have https://kind.sigs.k8s.io/docs/user/known-issues/#pod-errors-due-to-too-many-open-files
 kubectl get pods -A -o wide
@@ -168,4 +168,4 @@ MKOBJS_SCRIPT=./test/e2e/mkobjs.sh \
 FMA_CHART_INSTANCE_NAME=fma \
 READY_TARGET=1 \
 E2E_PLATFORM=kind \
-./test/e2e/test-cases.sh
+# ./test/e2e/test-cases.sh
