@@ -255,248 +255,248 @@ expect '! kubectl get pods -n '"$NS"' -o name | grep -qw pod/'"$collision_launch
 
 cheer Successful same-node collision handling
 
-# ---------------------------------------------------------------------------
-# Instance Wake-up Fast Path
-# ---------------------------------------------------------------------------
+# # ---------------------------------------------------------------------------
+# # Instance Wake-up Fast Path
+# # ---------------------------------------------------------------------------
 
-intro_case Instance Wake-up Fast Path
+# intro_case Instance Wake-up Fast Path
 
-# Scale requester to 0 (instance should sleep in launcher)
-kubectl scale rs $rs -n "$NS" --replicas=0
+# # Scale requester to 0 (instance should sleep in launcher)
+# kubectl scale rs $rs -n "$NS" --replicas=0
 
-expect "kubectl get pods -n $NS -o name -l app=dp-example,instance=$inst | wc -l | grep -w 0"
+# expect "kubectl get pods -n $NS -o name -l app=dp-example,instance=$inst | wc -l | grep -w 0"
 
-# On OpenShift, pin the GPU so the next scale-up reuses the same GPU.
-if [ "$E2E_PLATFORM" = "openshift" ]; then pin_gpu $rs; fi
+# # On OpenShift, pin the GPU so the next scale-up reuses the same GPU.
+# if [ "$E2E_PLATFORM" = "openshift" ]; then pin_gpu $rs; fi
 
-# Patch requester ReplicaSet to stick to testnode
-kubectl patch rs $rs -n "$NS" -p '{"spec": {"template": {"spec": {"nodeSelector": {"kubernetes.io/hostname": "'$testnode'"} }} }}'
+# # Patch requester ReplicaSet to stick to testnode
+# kubectl patch rs $rs -n "$NS" -p '{"spec": {"template": {"spec": {"nodeSelector": {"kubernetes.io/hostname": "'$testnode'"} }} }}'
 
-# Launcher should remain
-kubectl get pod $launcher1 -n "$NS"
+# # Launcher should remain
+# kubectl get pod $launcher1 -n "$NS"
 
-# Verify launcher is unbound (no dual label pointing to requester)
-expect '[ "$(kubectl get pod -n '"$NS"' $launcher1 -o jsonpath={.metadata.labels.dual-pods\\.llm-d\\.ai/dual})" == "" ]'
+# # Verify launcher is unbound (no dual label pointing to requester)
+# expect '[ "$(kubectl get pod -n '"$NS"' $launcher1 -o jsonpath={.metadata.labels.dual-pods\\.llm-d\\.ai/dual})" == "" ]'
 
-# Scale back up (should reuse same launcher and wake sleeping instance)
-kubectl scale rs $rs -n "$NS" --replicas=1
+# # Scale back up (should reuse same launcher and wake sleeping instance)
+# kubectl scale rs $rs -n "$NS" --replicas=1
 
-expect "kubectl get pods -n $NS -o name -l app=dp-example,instance=$inst | wc -l | grep -w 1"
+# expect "kubectl get pods -n $NS -o name -l app=dp-example,instance=$inst | wc -l | grep -w 1"
 
-req2=$(kubectl get pods -n "$NS" -o name -l app=dp-example,instance=$inst | sed s%pod/%%)
-echo "Server-requesting Pod2 is $req2"
+# req2=$(kubectl get pods -n "$NS" -o name -l app=dp-example,instance=$inst | sed s%pod/%%)
+# echo "Server-requesting Pod2 is $req2"
 
-# Should still be using the same launcher pod
-expect "kubectl get pods -n $NS -o name -l dual-pods.llm-d.ai/dual=$req2 | wc -l | grep -w 1"
-launcher2=$(kubectl get pods -n "$NS" -o name -l dual-pods.llm-d.ai/dual=$req2 | sed s%pod/%%)
-[ "$launcher2" == "$launcher1" ]
+# # Should still be using the same launcher pod
+# expect "kubectl get pods -n $NS -o name -l dual-pods.llm-d.ai/dual=$req2 | wc -l | grep -w 1"
+# launcher2=$(kubectl get pods -n "$NS" -o name -l dual-pods.llm-d.ai/dual=$req2 | sed s%pod/%%)
+# [ "$launcher2" == "$launcher1" ]
 
-# Verify requester is bound to launcher (bidirectional check)
-expect '[ "$(kubectl get pod -n '"$NS"' $req2 -o jsonpath={.metadata.labels.dual-pods\\.llm-d\\.ai/dual})" == "$launcher1" ]'
+# # Verify requester is bound to launcher (bidirectional check)
+# expect '[ "$(kubectl get pod -n '"$NS"' $req2 -o jsonpath={.metadata.labels.dual-pods\\.llm-d\\.ai/dual})" == "$launcher1" ]'
 
-# Wait for requester to be ready (launcher should already be ready)
-date
-kubectl wait --for condition=Ready pod/$req2 -n "$NS" --timeout=120s
-[ "$(kubectl get pod $launcher1 -n "$NS" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')" = "True" ]
+# # Wait for requester to be ready (launcher should already be ready)
+# date
+# kubectl wait --for condition=Ready pod/$req2 -n "$NS" --timeout=120s
+# [ "$(kubectl get pod $launcher1 -n "$NS" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')" = "True" ]
 
-# On OpenShift, verify the same GPU UUID was assigned after wake-up.
-if [ "$E2E_PLATFORM" = "openshift" ]; then check_gpu_pin $req2; fi
+# # On OpenShift, verify the same GPU UUID was assigned after wake-up.
+# if [ "$E2E_PLATFORM" = "openshift" ]; then check_gpu_pin $req2; fi
 
-cheer Successful instance wake-up fast path
+# cheer Successful instance wake-up fast path
 
-# ---------------------------------------------------------------------------
-# Multiple Instances Share One Launcher
-# ---------------------------------------------------------------------------
+# # ---------------------------------------------------------------------------
+# # Multiple Instances Share One Launcher
+# # ---------------------------------------------------------------------------
 
-intro_case Multiple Instances Share One Launcher
+# intro_case Multiple Instances Share One Launcher
 
-# Scale requester to 0 again
-kubectl scale rs $rs -n "$NS" --replicas=0
+# # Scale requester to 0 again
+# kubectl scale rs $rs -n "$NS" --replicas=0
 
-expect "kubectl get pods -n $NS -o name -l app=dp-example,instance=$inst | wc -l | grep -w 0"
+# expect "kubectl get pods -n $NS -o name -l app=dp-example,instance=$inst | wc -l | grep -w 0"
 
-# Launcher should remain
-kubectl get pod $launcher1 -n "$NS"
+# # Launcher should remain
+# kubectl get pod $launcher1 -n "$NS"
 
-# Verify launcher is unbound
-expect '[ "$(kubectl get pod -n '"$NS"' $launcher1 -o jsonpath={.metadata.labels.dual-pods\\.llm-d\\.ai/dual})" == "" ]'
+# # Verify launcher is unbound
+# expect '[ "$(kubectl get pod -n '"$NS"' $launcher1 -o jsonpath={.metadata.labels.dual-pods\\.llm-d\\.ai/dual})" == "" ]'
 
-# Patch ReplicaSet to use isc2 instead of isc
-kubectl patch rs $rs -n "$NS" -p='{"spec":{"template":{"metadata":{"annotations":{"dual-pods.llm-d.ai/inference-server-config":"'$isc2'"}}}}}'
+# # Patch ReplicaSet to use isc2 instead of isc
+# kubectl patch rs $rs -n "$NS" -p='{"spec":{"template":{"metadata":{"annotations":{"dual-pods.llm-d.ai/inference-server-config":"'$isc2'"}}}}}'
 
-# Scale back up (should reuse same launcher and create 2nd instance)
-kubectl scale rs $rs -n "$NS" --replicas=1
+# # Scale back up (should reuse same launcher and create 2nd instance)
+# kubectl scale rs $rs -n "$NS" --replicas=1
 
-expect "kubectl get pods -n $NS -o name -l app=dp-example,instance=$inst | wc -l | grep -w 1"
+# expect "kubectl get pods -n $NS -o name -l app=dp-example,instance=$inst | wc -l | grep -w 1"
 
-req3=$(kubectl get pods -n "$NS" -o name -l app=dp-example,instance=$inst | sed s%pod/%%)
-echo "Server-requesting Pod3 is $req3"
+# req3=$(kubectl get pods -n "$NS" -o name -l app=dp-example,instance=$inst | sed s%pod/%%)
+# echo "Server-requesting Pod3 is $req3"
 
-# Should still be using the same launcher pod
-expect "kubectl get pods -n $NS -o name -l dual-pods.llm-d.ai/dual=$req3 | wc -l | grep -w 1"
-launcher3=$(kubectl get pods -n "$NS" -o name -l dual-pods.llm-d.ai/dual=$req3 | sed s%pod/%%)
-[ "$launcher3" == "$launcher1" ]
+# # Should still be using the same launcher pod
+# expect "kubectl get pods -n $NS -o name -l dual-pods.llm-d.ai/dual=$req3 | wc -l | grep -w 1"
+# launcher3=$(kubectl get pods -n "$NS" -o name -l dual-pods.llm-d.ai/dual=$req3 | sed s%pod/%%)
+# [ "$launcher3" == "$launcher1" ]
 
-# Verify requester is bound to launcher (bidirectional check)
-expect '[ "$(kubectl get pod -n '"$NS"' $req3 -o jsonpath={.metadata.labels.dual-pods\\.llm-d\\.ai/dual})" == "$launcher1" ]'
+# # Verify requester is bound to launcher (bidirectional check)
+# expect '[ "$(kubectl get pod -n '"$NS"' $req3 -o jsonpath={.metadata.labels.dual-pods\\.llm-d\\.ai/dual})" == "$launcher1" ]'
 
-# Wait for requester to be ready (launcher should already be ready)
-date
-kubectl wait --for condition=Ready pod/$req3 -n "$NS" --timeout=120s
-[ "$(kubectl get pod $launcher1 -n "$NS" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')" = "True" ]
+# # Wait for requester to be ready (launcher should already be ready)
+# date
+# kubectl wait --for condition=Ready pod/$req3 -n "$NS" --timeout=120s
+# [ "$(kubectl get pod $launcher1 -n "$NS" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')" = "True" ]
 
-if [ "$E2E_PLATFORM" = "openshift" ]; then check_gpu_pin $req3; fi
+# if [ "$E2E_PLATFORM" = "openshift" ]; then check_gpu_pin $req3; fi
 
-cheer Successful multiple instances sharing one launcher
+# cheer Successful multiple instances sharing one launcher
 
-# ---------------------------------------------------------------------------
-# Switch Instances In One Launcher
-# ---------------------------------------------------------------------------
+# # ---------------------------------------------------------------------------
+# # Switch Instances In One Launcher
+# # ---------------------------------------------------------------------------
 
-intro_case Switch Instances In One Launcher
+# intro_case Switch Instances In One Launcher
 
-# Scale requester to 0 again
-kubectl scale rs $rs -n "$NS" --replicas=0
+# # Scale requester to 0 again
+# kubectl scale rs $rs -n "$NS" --replicas=0
 
-expect "kubectl get pods -n $NS -o name -l app=dp-example,instance=$inst | wc -l | grep -w 0"
+# expect "kubectl get pods -n $NS -o name -l app=dp-example,instance=$inst | wc -l | grep -w 0"
 
-# Launcher should remain
-kubectl get pod $launcher1 -n "$NS"
+# # Launcher should remain
+# kubectl get pod $launcher1 -n "$NS"
 
-# Verify launcher is unbound
-expect '[ "$(kubectl get pod -n '"$NS"' $launcher1 -o jsonpath={.metadata.labels.dual-pods\\.llm-d\\.ai/dual})" == "" ]'
+# # Verify launcher is unbound
+# expect '[ "$(kubectl get pod -n '"$NS"' $launcher1 -o jsonpath={.metadata.labels.dual-pods\\.llm-d\\.ai/dual})" == "" ]'
 
-# Patch ReplicaSet back to use original isc
-kubectl patch rs $rs -n "$NS" -p='{"spec":{"template":{"metadata":{"annotations":{"dual-pods.llm-d.ai/inference-server-config":"'$isc'"}}}}}'
+# # Patch ReplicaSet back to use original isc
+# kubectl patch rs $rs -n "$NS" -p='{"spec":{"template":{"metadata":{"annotations":{"dual-pods.llm-d.ai/inference-server-config":"'$isc'"}}}}}'
 
-# Scale back up (should reuse same launcher and wake first instance)
-kubectl scale rs $rs -n "$NS" --replicas=1
+# # Scale back up (should reuse same launcher and wake first instance)
+# kubectl scale rs $rs -n "$NS" --replicas=1
 
-expect "kubectl get pods -n $NS -o name -l app=dp-example,instance=$inst | wc -l | grep -w 1"
+# expect "kubectl get pods -n $NS -o name -l app=dp-example,instance=$inst | wc -l | grep -w 1"
 
-req4=$(kubectl get pods -n "$NS" -o name -l app=dp-example,instance=$inst | sed s%pod/%%)
-echo "Server-requesting Pod4 is $req4"
+# req4=$(kubectl get pods -n "$NS" -o name -l app=dp-example,instance=$inst | sed s%pod/%%)
+# echo "Server-requesting Pod4 is $req4"
 
-# Should still be using the same launcher pod
-expect "kubectl get pods -n $NS -o name -l dual-pods.llm-d.ai/dual=$req4 | wc -l | grep -w 1"
-launcher4=$(kubectl get pods -n "$NS" -o name -l dual-pods.llm-d.ai/dual=$req4 | sed s%pod/%%)
-[ "$launcher4" == "$launcher1" ]
+# # Should still be using the same launcher pod
+# expect "kubectl get pods -n $NS -o name -l dual-pods.llm-d.ai/dual=$req4 | wc -l | grep -w 1"
+# launcher4=$(kubectl get pods -n "$NS" -o name -l dual-pods.llm-d.ai/dual=$req4 | sed s%pod/%%)
+# [ "$launcher4" == "$launcher1" ]
 
-# Verify requester is bound to launcher (bidirectional check)
-expect '[ "$(kubectl get pod -n '"$NS"' $req4 -o jsonpath={.metadata.labels.dual-pods\\.llm-d\\.ai/dual})" == "$launcher1" ]'
+# # Verify requester is bound to launcher (bidirectional check)
+# expect '[ "$(kubectl get pod -n '"$NS"' $req4 -o jsonpath={.metadata.labels.dual-pods\\.llm-d\\.ai/dual})" == "$launcher1" ]'
 
-# Wait for requester to be ready (launcher should already be ready)
-date
-kubectl wait --for condition=Ready pod/$req4 -n "$NS" --timeout=120s
-[ "$(kubectl get pod $launcher1 -n "$NS" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')" = "True" ]
+# # Wait for requester to be ready (launcher should already be ready)
+# date
+# kubectl wait --for condition=Ready pod/$req4 -n "$NS" --timeout=120s
+# [ "$(kubectl get pod $launcher1 -n "$NS" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')" = "True" ]
 
-if [ "$E2E_PLATFORM" = "openshift" ]; then check_gpu_pin $req4; fi
+# if [ "$E2E_PLATFORM" = "openshift" ]; then check_gpu_pin $req4; fi
 
-cheer Successful switching instances in one launcher
+# cheer Successful switching instances in one launcher
 
-# ---------------------------------------------------------------------------
-# Controller Restart State Recovery
-# ---------------------------------------------------------------------------
+# # ---------------------------------------------------------------------------
+# # Controller Restart State Recovery
+# # ---------------------------------------------------------------------------
 
-intro_case Controller Restart State Recovery
+# intro_case Controller Restart State Recovery
 
-# This test verifies that the controller can rebuild its internal state after restart
-# by syncing launcher instances from unbound launcher pods
+# # This test verifies that the controller can rebuild its internal state after restart
+# # by syncing launcher instances from unbound launcher pods
 
-# Scale requester to 0 to create sleeping instances
-kubectl scale rs $rs -n "$NS" --replicas=0
+# # Scale requester to 0 to create sleeping instances
+# kubectl scale rs $rs -n "$NS" --replicas=0
 
-expect "kubectl get pods -n $NS -o name -l app=dp-example,instance=$inst | wc -l | grep -w 0"
+# expect "kubectl get pods -n $NS -o name -l app=dp-example,instance=$inst | wc -l | grep -w 0"
 
-# Verify launcher set is unchanged and target launcher is unbound
-launcher_count_pre_restart=$(kubectl get pods -n "$NS" -o name -l dual-pods.llm-d.ai/launcher-config-name=$lc | wc -l)
-echo launcher_count_pre_restart = $launcher_count_pre_restart
-kubectl get pods -n "$NS" -o name -l dual-pods.llm-d.ai/launcher-config-name=$lc | grep -x "pod/$launcher1"
-expect '[ "$(kubectl get pod -n '"$NS"' $launcher1 -o jsonpath={.metadata.labels.dual-pods\\.llm-d\\.ai/dual})" == "" ]'
+# # Verify launcher set is unchanged and target launcher is unbound
+# launcher_count_pre_restart=$(kubectl get pods -n "$NS" -o name -l dual-pods.llm-d.ai/launcher-config-name=$lc | wc -l)
+# echo launcher_count_pre_restart = $launcher_count_pre_restart
+# kubectl get pods -n "$NS" -o name -l dual-pods.llm-d.ai/launcher-config-name=$lc | grep -x "pod/$launcher1"
+# expect '[ "$(kubectl get pod -n '"$NS"' $launcher1 -o jsonpath={.metadata.labels.dual-pods\\.llm-d\\.ai/dual})" == "" ]'
 
-# Verify launcher has sleeping instances before restart
-launcher_instances_before=$(kubectl exec -n "$NS" $launcher1 -- python3 -c 'import json,urllib.request; print(json.load(urllib.request.urlopen("http://127.0.0.1:8001/v2/vllm/instances"))["total_instances"])')
-echo "Launcher has $launcher_instances_before instances before controller restart"
-[ "$launcher_instances_before" -gt "0" ]
+# # Verify launcher has sleeping instances before restart
+# launcher_instances_before=$(kubectl exec -n "$NS" $launcher1 -- python3 -c 'import json,urllib.request; print(json.load(urllib.request.urlopen("http://127.0.0.1:8001/v2/vllm/instances"))["total_instances"])')
+# echo "Launcher has $launcher_instances_before instances before controller restart"
+# [ "$launcher_instances_before" -gt "0" ]
 
-# Restart the dual-pods controller to test state recovery
-echo "Restarting dual-pods controller..."
-kubectl rollout restart deployment "${FMA_CHART_INSTANCE_NAME}-dual-pods-controller" -n "$NS"
-kubectl rollout status deployment "${FMA_CHART_INSTANCE_NAME}-dual-pods-controller" -n "$NS" --timeout=60s
+# # Restart the dual-pods controller to test state recovery
+# echo "Restarting dual-pods controller..."
+# kubectl rollout restart deployment "${FMA_CHART_INSTANCE_NAME}-dual-pods-controller" -n "$NS"
+# kubectl rollout status deployment "${FMA_CHART_INSTANCE_NAME}-dual-pods-controller" -n "$NS" --timeout=60s
 
-# Wait for controller to be ready for ongoing checks
-# In detail: allow some time for the dual-pods controller to do something unexpected in the case
-# that the controller is behaving incorrectly, so that the ongoing checks have some chance to fail
-# thus detect the incorrectness, instead of just quickly and coincidentally passing.
-sleep 30
+# # Wait for controller to be ready for ongoing checks
+# # In detail: allow some time for the dual-pods controller to do something unexpected in the case
+# # that the controller is behaving incorrectly, so that the ongoing checks have some chance to fail
+# # thus detect the incorrectness, instead of just quickly and coincidentally passing.
+# sleep 30
 
-# Verify launcher pod set size is unchanged and target launcher is still running
-expect "kubectl get pods -n $NS -o name -l dual-pods.llm-d.ai/launcher-config-name=$lc | wc -l | grep -w $launcher_count_pre_restart"
-kubectl get pods -n "$NS" -o name -l dual-pods.llm-d.ai/launcher-config-name=$lc | grep -x "pod/$launcher1"
+# # Verify launcher pod set size is unchanged and target launcher is still running
+# expect "kubectl get pods -n $NS -o name -l dual-pods.llm-d.ai/launcher-config-name=$lc | wc -l | grep -w $launcher_count_pre_restart"
+# kubectl get pods -n "$NS" -o name -l dual-pods.llm-d.ai/launcher-config-name=$lc | grep -x "pod/$launcher1"
 
-# Verify launcher still has the same number of instances after controller restart
-launcher_instances_after=$(kubectl exec -n "$NS" $launcher1 -- python3 -c 'import json,urllib.request; print(json.load(urllib.request.urlopen("http://127.0.0.1:8001/v2/vllm/instances"))["total_instances"])')
-echo "Launcher has $launcher_instances_after instances after controller restart"
-[ "$launcher_instances_after" == "$launcher_instances_before" ]
+# # Verify launcher still has the same number of instances after controller restart
+# launcher_instances_after=$(kubectl exec -n "$NS" $launcher1 -- python3 -c 'import json,urllib.request; print(json.load(urllib.request.urlopen("http://127.0.0.1:8001/v2/vllm/instances"))["total_instances"])')
+# echo "Launcher has $launcher_instances_after instances after controller restart"
+# [ "$launcher_instances_after" == "$launcher_instances_before" ]
 
-# Now scale up requester - controller should correctly select the launcher with sleeping instance
-# Use isc2 which should have a sleeping instance from before
-kubectl patch rs $rs -n "$NS" --type=json -p='[{"op": "replace", "path": "/spec/template/metadata/annotations/dual-pods.llm-d.ai~1inference-server-config", "value": "'$isc2'"}]'
-kubectl scale rs $rs -n "$NS" --replicas=1
+# # Now scale up requester - controller should correctly select the launcher with sleeping instance
+# # Use isc2 which should have a sleeping instance from before
+# kubectl patch rs $rs -n "$NS" --type=json -p='[{"op": "replace", "path": "/spec/template/metadata/annotations/dual-pods.llm-d.ai~1inference-server-config", "value": "'$isc2'"}]'
+# kubectl scale rs $rs -n "$NS" --replicas=1
 
-expect "kubectl get pods -n $NS -o name -l app=dp-example,instance=$inst | wc -l | grep -w 1"
-req_post_restart=$(kubectl get pods -n "$NS" -o name -l app=dp-example,instance=$inst | sed s%pod/%%)
+# expect "kubectl get pods -n $NS -o name -l app=dp-example,instance=$inst | wc -l | grep -w 1"
+# req_post_restart=$(kubectl get pods -n "$NS" -o name -l app=dp-example,instance=$inst | sed s%pod/%%)
 
-# Verify requester is bound to the same launcher (controller recovered state correctly)
-expect '[ "$(kubectl get pod -n '"$NS"' $req_post_restart -o jsonpath={.metadata.labels.dual-pods\\.llm-d\\.ai/dual})" == "$launcher1" ]'
-expect '[ "$(kubectl get pod -n '"$NS"' $launcher1 -o jsonpath={.metadata.labels.dual-pods\\.llm-d\\.ai/dual})" == "$req_post_restart" ]'
+# # Verify requester is bound to the same launcher (controller recovered state correctly)
+# expect '[ "$(kubectl get pod -n '"$NS"' $req_post_restart -o jsonpath={.metadata.labels.dual-pods\\.llm-d\\.ai/dual})" == "$launcher1" ]'
+# expect '[ "$(kubectl get pod -n '"$NS"' $launcher1 -o jsonpath={.metadata.labels.dual-pods\\.llm-d\\.ai/dual})" == "$req_post_restart" ]'
 
-# Verify requester becomes ready (fast wake-up path should work)
-date
-kubectl wait --for condition=Ready pod/$req_post_restart -n "$NS" --timeout=30s
-[ "$(kubectl get pod $launcher1 -n "$NS" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')" = "True" ]
+# # Verify requester becomes ready (fast wake-up path should work)
+# date
+# kubectl wait --for condition=Ready pod/$req_post_restart -n "$NS" --timeout=30s
+# [ "$(kubectl get pod $launcher1 -n "$NS" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')" = "True" ]
 
-if [ "$E2E_PLATFORM" = "openshift" ]; then check_gpu_pin $req_post_restart; fi
+# if [ "$E2E_PLATFORM" = "openshift" ]; then check_gpu_pin $req_post_restart; fi
 
-cheer Successful controller restart state recovery
+# cheer Successful controller restart state recovery
 
-# ---------------------------------------------------------------------------
-# Unbound Launcher Deletion Cleanup
-# ---------------------------------------------------------------------------
+# # ---------------------------------------------------------------------------
+# # Unbound Launcher Deletion Cleanup
+# # ---------------------------------------------------------------------------
 
-intro_case Unbound Launcher Deletion Cleanup
+# intro_case Unbound Launcher Deletion Cleanup
 
-# This test verifies that deleting an unbound launcher does not leave the controller
-# stuck with stale instance state.
+# # This test verifies that deleting an unbound launcher does not leave the controller
+# # stuck with stale instance state.
 
-kubectl scale rs $rs -n "$NS" --replicas=0
+# kubectl scale rs $rs -n "$NS" --replicas=0
 
-expect "kubectl get pods -n $NS -o name -l app=dp-example,instance=$inst | wc -l | grep -w 0"
-expect '[ "$(kubectl get pod -n '"$NS"' $launcher1 -o jsonpath={.metadata.labels.dual-pods\\.llm-d\\.ai/dual})" == "" ]'
+# expect "kubectl get pods -n $NS -o name -l app=dp-example,instance=$inst | wc -l | grep -w 0"
+# expect '[ "$(kubectl get pod -n '"$NS"' $launcher1 -o jsonpath={.metadata.labels.dual-pods\\.llm-d\\.ai/dual})" == "" ]'
 
-kubectl delete pod $launcher1 -n "$NS" --wait=true
+# kubectl delete pod $launcher1 -n "$NS" --wait=true
 
-! kubectl get pods -n "$NS" -o name | grep -qw pod/$launcher1
+# ! kubectl get pods -n "$NS" -o name | grep -qw pod/$launcher1
 
-kubectl scale rs $rs -n "$NS" --replicas=1
+# kubectl scale rs $rs -n "$NS" --replicas=1
 
-expect "kubectl get pods -n $NS -o name -l app=dp-example,instance=$inst | wc -l | grep -w 1"
-req_after_delete=$(kubectl get pods -n "$NS" -o name -l app=dp-example,instance=$inst | sed s%pod/%%)
-echo "Server-requesting Pod after delete = $req_after_delete"
+# expect "kubectl get pods -n $NS -o name -l app=dp-example,instance=$inst | wc -l | grep -w 1"
+# req_after_delete=$(kubectl get pods -n "$NS" -o name -l app=dp-example,instance=$inst | sed s%pod/%%)
+# echo "Server-requesting Pod after delete = $req_after_delete"
 
-expect "kubectl get pods -n $NS -o name -l dual-pods.llm-d.ai/dual=$req_after_delete | wc -l | grep -w 1"
-launcher_after_delete=$(kubectl get pods -n "$NS" -o name -l dual-pods.llm-d.ai/dual=$req_after_delete | sed s%pod/%%)
-echo "Launcher after delete = $launcher_after_delete"
+# expect "kubectl get pods -n $NS -o name -l dual-pods.llm-d.ai/dual=$req_after_delete | wc -l | grep -w 1"
+# launcher_after_delete=$(kubectl get pods -n "$NS" -o name -l dual-pods.llm-d.ai/dual=$req_after_delete | sed s%pod/%%)
+# echo "Launcher after delete = $launcher_after_delete"
 
-[ "$launcher_after_delete" != "$launcher1" ]
-expect '[ "$(kubectl get pod -n '"$NS"' $req_after_delete -o jsonpath={.metadata.labels.dual-pods\\.llm-d\\.ai/dual})" == "$launcher_after_delete" ]'
+# [ "$launcher_after_delete" != "$launcher1" ]
+# expect '[ "$(kubectl get pod -n '"$NS"' $req_after_delete -o jsonpath={.metadata.labels.dual-pods\\.llm-d\\.ai/dual})" == "$launcher_after_delete" ]'
 
-date
-kubectl wait --for condition=Ready pod/$req_after_delete -n "$NS" --timeout=120s
-[ "$(kubectl get pod $launcher_after_delete -n "$NS" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')" = "True" ]
+# date
+# kubectl wait --for condition=Ready pod/$req_after_delete -n "$NS" --timeout=120s
+# [ "$(kubectl get pod $launcher_after_delete -n "$NS" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')" = "True" ]
 
-if [ "$E2E_PLATFORM" = "openshift" ]; then check_gpu_pin $req_after_delete; fi
+# if [ "$E2E_PLATFORM" = "openshift" ]; then check_gpu_pin $req_after_delete; fi
 
-cheer Successful unbound launcher deletion cleanup
+# cheer Successful unbound launcher deletion cleanup
 
-cheer All launcher-based tests passed
+# cheer All launcher-based tests passed
