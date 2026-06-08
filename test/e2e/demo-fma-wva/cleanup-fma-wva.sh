@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Tears down resources created by install-fma-only.sh (FMA + WVA + llm-d).
+# Tears down resources created by demo-fma-wva-ocp.sh (FMA + WVA + llm-d).
 #
 # By default removes FMA objects, WVA objects, HPA, and FMA controllers but keeps
 # the namespace, CRDs, EPP, and WVA controller.
@@ -9,7 +9,9 @@
 #
 # Prerequisites:
 #   - oc/kubectl authenticated
-#   - helm, git (only required when FULL_CLEANUP=true)
+#   - helm  (used on the default path to uninstall the FMA Helm release)
+#   - git, jq  (only required when FULL_CLEANUP=true; jq is used to strip
+#               namespace finalizers if the namespace hangs in Terminating)
 #
 # When FULL_CLEANUP=true, the workload-variant-autoscaler (WVA) repo is
 # auto-cloned to $WVA_REPO_PATH if not already present. To use an existing

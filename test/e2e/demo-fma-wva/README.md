@@ -14,10 +14,7 @@ to pre-clone or set `WVA_REPO_PATH`.
 ## Prerequisites
 
 - `oc` authenticated to an OpenShift cluster with GPU nodes
-- `helm`, `kubectl`, `make`, `git` on `$PATH`
-- Cluster has `nvidia.com/gpu` device plugin and at least one node labelled
-  `nvidia.com/gpu.present=true`
-- Run from the repo root (`llm-d-fast-model-actuation/`)
+- `helm`, `kubectl`, `make`, `git`, `jq`, `yq` ([mikefarah/yq](https://github.com/mikefarah/yq)) on `$PATH`
 
 ## Deploy
 
@@ -114,10 +111,12 @@ some inference requests through the gateway and wait one reconcile cycle
 (~30s).
 
 **Launcher pod missing the `llm-d.ai/variant` label**
-Labels propagate from `LauncherConfig.spec.podTemplate.metadata.labels` at
-pod-creation time only. If the LauncherConfig was updated after the launcher
-existed, delete the launcher pod and the populator will recreate it with the
-new labels.
+The `llm-d.ai/variant` label is applied from
+`InferenceServerConfig.spec.modelServerConfig.labels` when a requester binds
+to a launcher. Unbound (idle) launchers won't carry it. Check the ISC, and
+verify the launcher is bound (has the `dual-pods.llm-d.ai/dual` label set).
+Don't add the label to `LauncherConfig.spec.podTemplate.metadata.labels` —
+it will collide with ISC-applied labels during binding.
 
 **Cleanup says "WVA_REPO_PATH directory does not exist" with a weird path**
 You probably typed `WVA_REPO_PATH=` twice on the command line. Set it once,

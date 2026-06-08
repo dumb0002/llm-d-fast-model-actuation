@@ -164,7 +164,13 @@ echo "  Verifying FMA CRDs..."
 kubectl get crd | grep fma.llm-d.ai || echo "  WARNING: FMA CRDs not found"
 
 echo "  Verifying FMA controllers..."
-kubectl get deployment -n "$NAMESPACE" -l app.kubernetes.io/part-of=fma || echo "  WARNING: FMA controllers not found"
+# `kubectl get -l ...` exits 0 with empty output when nothing matches, so we
+# check for non-empty `-o name` output to detect missing resources reliably.
+if kubectl get deployment -n "$NAMESPACE" -l app.kubernetes.io/part-of=fma -o name 2>/dev/null | grep -q .; then
+    kubectl get deployment -n "$NAMESPACE" -l app.kubernetes.io/part-of=fma
+else
+    echo "  WARNING: FMA controllers not found"
+fi
 
 
 # =========================================================================
@@ -197,7 +203,11 @@ else
 fi
 
 echo "  Verifying WVA deployment..."
-kubectl get deployment -n "$NAMESPACE" -l control-plane=controller-manager || echo "  WARNING: WVA controller not found"
+if kubectl get deployment -n "$NAMESPACE" -l control-plane=controller-manager -o name 2>/dev/null | grep -q .; then
+    kubectl get deployment -n "$NAMESPACE" -l control-plane=controller-manager
+else
+    echo "  WARNING: WVA controller not found"
+fi
 
 
 # =========================================================================
@@ -224,8 +234,16 @@ else
 fi
 
 echo "  Verifying llm-d EPP..."
-kubectl get inferencepool -n "$NAMESPACE" || echo "  WARNING: InferencePool not found"
-kubectl get gateway -n "$NAMESPACE" || echo "  WARNING: Gateway not found"
+if kubectl get inferencepool -n "$NAMESPACE" -o name 2>/dev/null | grep -q .; then
+    kubectl get inferencepool -n "$NAMESPACE"
+else
+    echo "  WARNING: InferencePool not found"
+fi
+if kubectl get gateway -n "$NAMESPACE" -o name 2>/dev/null | grep -q .; then
+    kubectl get gateway -n "$NAMESPACE"
+else
+    echo "  WARNING: Gateway not found"
+fi
 
 
 # =========================================================================
