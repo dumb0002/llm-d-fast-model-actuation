@@ -10,63 +10,126 @@
 #   - This repo (llm-d-incubation/llm-d-fast-model-actuation) cloned locally
 #   - oc CLI authenticated to an OCP cluster with GPU nodes
 #   - helm, kubectl, make, git installed
-#   - Container images already pushed to registry (see CONTAINER_IMG_REG)
+#   - Container images already pushed to registry (see --container-img-reg)
 #
-# The workload-variant-autoscaler (WVA) repo is auto-cloned to
-# $WVA_REPO_PATH if not already present. To use an existing checkout,
-# set WVA_REPO_PATH to its path.
+# The workload-variant-autoscaler (WVA) repo is auto-cloned to --wva-repo-path
+# if not already present. To use an existing checkout, pass --wva-repo-path
+# /path/to/checkout.
 #
-# Optional environment variables (with defaults):
-#   WVA_REPO_PATH      - path to WVA repo (default: ~/.cache/llm-d-fma/workload-variant-autoscaler)
-#   WVA_REPO_URL       - WVA git URL (default: https://github.com/llm-d/llm-d-workload-variant-autoscaler)
-#   WVA_REPO_REF       - WVA git ref/branch/tag (default: main)
-#   NAMESPACE          - target namespace (default: fma-wva-demo)
-#   CONTAINER_IMG_REG  - FMA image registry (default: ghcr.io/llm-d-incubation/llm-d-fast-model-actuation)
-#   IMAGE_TAG          - FMA image tag (default: v0.6.0-alpha.12)
-#   LAUNCHER_IMAGE     - launcher image (default: $CONTAINER_IMG_REG/launcher:$IMAGE_TAG)
-#   REQUESTER_IMAGE    - requester image (default: $CONTAINER_IMG_REG/requester:$IMAGE_TAG)
-#   MODEL              - vLLM model (default: HuggingFaceTB/SmolLM2-360M-Instruct)
-#   GPU_NODE           - node for LPP (default: first node with nvidia.com/gpu.present=true)
-#   WVA_IMAGE_REPO     - WVA image repository (default: quay.io/braulio/llm-d-wva)
-#   WVA_IMAGE_TAG      - WVA image tag (default: v4)
-#   CONTROLLER_INSTANCE - WVA controller instance name (default: fma-wva)
-#   MONITORING_NAMESPACE - monitoring namespace (default: openshift-user-workload-monitoring)
-#   LLM_D_RELEASE      - llm-d release version (default: v0.7.0)
-#   GAIE_VERSION       - GAIE version (default: v1.5.0)
-#   HF_TOKEN           - HuggingFace token (optional)
-#   DEPLOY_PROMETHEUS  - deploy Prometheus (default: false, uses OpenShift monitoring)
-#   DEPLOY_PROMETHEUS_ADAPTER - deploy Prometheus adapter (default: false)
+# Run with --help for the full list of flags.
 
 set -euo pipefail
 
-# FMA Configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+
+# ----------------------------------------------------------------------------
+# CLI parsing — flags are the primary interface; matching env vars are honored
+# as a fallback for backward compatibility but flags take precedence.
+# ----------------------------------------------------------------------------
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") [OPTIONS]
+
+Deploys FMA + WVA + llm-d components in the same namespace.
+
+FMA / cluster options:
+  -n, --namespace NAME              Target namespace (default: fma-wva-demo)
+      --container-img-reg URL       FMA image registry
+                                    (default: ghcr.io/llm-d-incubation/llm-d-fast-model-actuation)
+      --image-tag TAG               FMA image tag (default: v0.6.0-alpha.12)
+      --launcher-image IMG          Launcher image
+                                    (default: <container-img-reg>/launcher:<image-tag>)
+      --requester-image IMG         Requester image
+                                    (default: <container-img-reg>/requester:<image-tag>)
+      --model NAME                  vLLM model (default: HuggingFaceTB/SmolLM2-360M-Instruct)
+      --gpu-node NODE               Node for LPP (default: first node with
+                                    nvidia.com/gpu.present=true)
+      --hf-token TOKEN              HuggingFace token (for gated models)
+
+WVA options:
+      --wva-repo-path PATH          Path to WVA repo (default: <repo-root>/.wva-checkout)
+      --wva-repo-url URL            WVA git URL
+                                    (default: https://github.com/llm-d/llm-d-workload-variant-autoscaler)
+      --wva-repo-ref REF            WVA git ref/branch/tag (default: main)
+      --wva-image-repo URL          WVA image repository (default: quay.io/braulio/llm-d-wva)
+      --wva-image-tag TAG           WVA image tag (default: v4)
+      --controller-instance NAME    WVA controller instance name (default: fma-wva)
+      --monitoring-namespace NAME   Monitoring namespace
+                                    (default: openshift-user-workload-monitoring)
+      --llm-d-release VER           llm-d release version (default: v0.7.0)
+      --gaie-version VER            GAIE version (default: v1.5.0)
+      --deploy-prometheus           Deploy Prometheus instead of using cluster monitoring
+      --deploy-prometheus-adapter   Deploy Prometheus adapter
+
+  -h, --help                        Show this help and exit
+
+Environment variables matching the long-form flag names (e.g. NAMESPACE,
+IMAGE_TAG, WVA_REPO_PATH, ...) are also accepted for backward compatibility,
+but flags take precedence.
+EOF
+}
+
+# Seed defaults from env vars (so existing callers using env vars still work).
 NAMESPACE="${NAMESPACE:-fma-wva-demo}"
 CONTAINER_IMG_REG="${CONTAINER_IMG_REG:-ghcr.io/llm-d-incubation/llm-d-fast-model-actuation}"
 IMAGE_TAG="${IMAGE_TAG:-v0.6.0-alpha.12}"
-LAUNCHER_IMAGE="${LAUNCHER_IMAGE:-${CONTAINER_IMG_REG}/launcher:${IMAGE_TAG}}"
-REQUESTER_IMAGE="${REQUESTER_IMAGE:-${CONTAINER_IMG_REG}/requester:${IMAGE_TAG}}"
+LAUNCHER_IMAGE="${LAUNCHER_IMAGE:-}"
+REQUESTER_IMAGE="${REQUESTER_IMAGE:-}"
 MODEL="${MODEL:-HuggingFaceTB/SmolLM2-360M-Instruct}"
 GPU_NODE="${GPU_NODE:-}"
+HF_TOKEN="${HF_TOKEN:-}"
 
-# WVA Configuration
+WVA_REPO_PATH="${WVA_REPO_PATH:-$REPO_ROOT/.wva-checkout}"
+WVA_REPO_URL="${WVA_REPO_URL:-https://github.com/llm-d/llm-d-workload-variant-autoscaler}"
+WVA_REPO_REF="${WVA_REPO_REF:-main}"
 WVA_IMAGE_REPO="${WVA_IMAGE_REPO:-quay.io/braulio/llm-d-wva}"
 WVA_IMAGE_TAG="${WVA_IMAGE_TAG:-v4}"
 CONTROLLER_INSTANCE="${CONTROLLER_INSTANCE:-fma-wva}"
 MONITORING_NAMESPACE="${MONITORING_NAMESPACE:-openshift-user-workload-monitoring}"
 LLM_D_RELEASE="${LLM_D_RELEASE:-v0.7.0}"
 GAIE_VERSION="${GAIE_VERSION:-v1.5.0}"
-HF_TOKEN="${HF_TOKEN:-}"
 DEPLOY_PROMETHEUS="${DEPLOY_PROMETHEUS:-false}"
 DEPLOY_PROMETHEUS_ADAPTER="${DEPLOY_PROMETHEUS_ADAPTER:-false}"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+# Helper for required-arg flags
+need_arg() {
+    [[ $# -ge 2 ]] || { echo "ERROR: $1 requires an argument" >&2; exit 2; }
+}
 
-# WVA repo: auto-clone if not present. WVA_REPO_PATH may be pre-set to point
-# at an existing checkout; otherwise default to a per-user cache directory.
-WVA_REPO_PATH="${WVA_REPO_PATH:-$HOME/.cache/llm-d-fma/workload-variant-autoscaler}"
-WVA_REPO_URL="${WVA_REPO_URL:-https://github.com/llm-d/llm-d-workload-variant-autoscaler}"
-WVA_REPO_REF="${WVA_REPO_REF:-main}"
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -n|--namespace)              need_arg "$@"; NAMESPACE="$2"; shift 2 ;;
+        --container-img-reg)         need_arg "$@"; CONTAINER_IMG_REG="$2"; shift 2 ;;
+        --image-tag)                 need_arg "$@"; IMAGE_TAG="$2"; shift 2 ;;
+        --launcher-image)            need_arg "$@"; LAUNCHER_IMAGE="$2"; shift 2 ;;
+        --requester-image)           need_arg "$@"; REQUESTER_IMAGE="$2"; shift 2 ;;
+        --model)                     need_arg "$@"; MODEL="$2"; shift 2 ;;
+        --gpu-node)                  need_arg "$@"; GPU_NODE="$2"; shift 2 ;;
+        --hf-token)                  need_arg "$@"; HF_TOKEN="$2"; shift 2 ;;
+        --wva-repo-path)             need_arg "$@"; WVA_REPO_PATH="$2"; shift 2 ;;
+        --wva-repo-url)              need_arg "$@"; WVA_REPO_URL="$2"; shift 2 ;;
+        --wva-repo-ref)              need_arg "$@"; WVA_REPO_REF="$2"; shift 2 ;;
+        --wva-image-repo)            need_arg "$@"; WVA_IMAGE_REPO="$2"; shift 2 ;;
+        --wva-image-tag)             need_arg "$@"; WVA_IMAGE_TAG="$2"; shift 2 ;;
+        --controller-instance)       need_arg "$@"; CONTROLLER_INSTANCE="$2"; shift 2 ;;
+        --monitoring-namespace)      need_arg "$@"; MONITORING_NAMESPACE="$2"; shift 2 ;;
+        --llm-d-release)             need_arg "$@"; LLM_D_RELEASE="$2"; shift 2 ;;
+        --gaie-version)              need_arg "$@"; GAIE_VERSION="$2"; shift 2 ;;
+        --deploy-prometheus)         DEPLOY_PROMETHEUS=true; shift ;;
+        --deploy-prometheus-adapter) DEPLOY_PROMETHEUS_ADAPTER=true; shift ;;
+        -h|--help)                   usage; exit 0 ;;
+        *)
+            echo "ERROR: Unknown option: $1" >&2
+            usage >&2
+            exit 2 ;;
+    esac
+done
+
+# Compute derived defaults after parsing (so --container-img-reg / --image-tag
+# can flow into LAUNCHER_IMAGE / REQUESTER_IMAGE if those weren't set explicitly).
+LAUNCHER_IMAGE="${LAUNCHER_IMAGE:-${CONTAINER_IMG_REG}/launcher:${IMAGE_TAG}}"
+REQUESTER_IMAGE="${REQUESTER_IMAGE:-${CONTAINER_IMG_REG}/requester:${IMAGE_TAG}}"
 
 if [ ! -d "$WVA_REPO_PATH/.git" ]; then
     if [ -d "$WVA_REPO_PATH" ] && [ -n "$(ls -A "$WVA_REPO_PATH" 2>/dev/null)" ]; then

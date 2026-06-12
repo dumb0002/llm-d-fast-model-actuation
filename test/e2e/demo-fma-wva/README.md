@@ -9,7 +9,16 @@ OpenShift namespace.
 | `cleanup-fma-wva.sh` | Tear it all back down |
 
 The workload-variant-autoscaler (WVA) repo is cloned automatically — no need
-to pre-clone or set `WVA_REPO_PATH`.
+to pre-clone or pass `--wva-repo-path`.
+
+Both scripts use a standard CLI flag interface. Run either with `--help`
+for the full list of options.
+
+## Versioning
+
+FMA and WVA release independently, so incompatibilities are possible. The
+defaults pin a known-good pair: FMA `--image-tag v0.6.0-alpha.12` + WVA
+`--wva-repo-ref main`. If you change one, test the pair.
 
 ## Prerequisites
 
@@ -27,13 +36,13 @@ Default deploy (uses namespace `fma-wva-demo`):
 Pick your own namespace:
 
 ```shell
-NAMESPACE=my-fma-demo ./test/e2e/demo-fma-wva/demo-fma-wva-ocp.sh
+./test/e2e/demo-fma-wva/demo-fma-wva-ocp.sh --namespace my-fma-demo
 ```
 
 The script is idempotent — re-running it skips components that already exist.
-On first run it clones the WVA repo to
-`~/.cache/llm-d-fma/workload-variant-autoscaler` and reuses it on subsequent
-runs.
+On first run it clones the WVA repo to `.wva-checkout/` at the repo root and
+reuses it on subsequent runs. Pass `--wva-repo-path PATH` to use a different
+location (e.g., a shared checkout outside this repo).
 
 ## Tear down
 
@@ -41,65 +50,67 @@ By default cleans up FMA / WVA objects but leaves the namespace, CRDs,
 WVA controller, and EPP/Gateway in place:
 
 ```shell
-NAMESPACE=my-fma-demo ./test/e2e/demo-fma-wva/cleanup-fma-wva.sh
+./test/e2e/demo-fma-wva/cleanup-fma-wva.sh --namespace my-fma-demo
 ```
 
 Full cleanup (also removes namespace, node labels, WVA controller, EPP):
 
 ```shell
-FULL_CLEANUP=true NAMESPACE=my-fma-demo \
-  ./test/e2e/demo-fma-wva/cleanup-fma-wva.sh
+./test/e2e/demo-fma-wva/cleanup-fma-wva.sh --namespace my-fma-demo --full-cleanup
 ```
 
 CRDs (Gateway API, GAIE, FMA, WVA) are never removed — they may be shared
 across namespaces. Delete them by hand if you want a complete wipe.
 
-## Common environment variables
+## Common flags
 
-| Variable | Default | Used by |
+| Flag | Default | Used by |
 |---|---|---|
-| `NAMESPACE` | `fma-wva-demo` | both |
-| `FULL_CLEANUP` | `false` | cleanup |
-| `WVA_REPO_PATH` | `~/.cache/llm-d-fma/workload-variant-autoscaler` | both |
-| `WVA_REPO_URL` | `https://github.com/llm-d/llm-d-workload-variant-autoscaler` | both |
-| `WVA_REPO_REF` | `main` | both |
-| `CONTAINER_IMG_REG` | `ghcr.io/llm-d-incubation/llm-d-fast-model-actuation` | deploy |
-| `IMAGE_TAG` | `v0.6.0-alpha.12` | deploy |
-| `MODEL` | `HuggingFaceTB/SmolLM2-360M-Instruct` | deploy |
-| `GPU_NODE` | first node with `nvidia.com/gpu.present=true` | deploy |
-| `HF_TOKEN` | (unset) | deploy (if model is gated) |
+| `-n`, `--namespace NAME` | `fma-wva-demo` | both |
+| `-f`, `--full-cleanup` | (off) | cleanup |
+| `--wva-repo-path PATH` | `<repo-root>/.wva-checkout` | both |
+| `--wva-repo-url URL` | `https://github.com/llm-d/llm-d-workload-variant-autoscaler` | both |
+| `--wva-repo-ref REF` | `main` | both |
+| `--container-img-reg URL` | `ghcr.io/llm-d-incubation/llm-d-fast-model-actuation` | deploy |
+| `--image-tag TAG` | `v0.6.0-alpha.12` | deploy |
+| `--model NAME` | `HuggingFaceTB/SmolLM2-360M-Instruct` | deploy |
+| `--gpu-node NODE` | first node with `nvidia.com/gpu.present=true` | deploy |
+| `--hf-token TOKEN` | (unset) | deploy (if model is gated) |
 
-See the script headers for the complete list.
+Run `./demo-fma-wva-ocp.sh --help` or `./cleanup-fma-wva.sh --help` for the
+complete list. Equivalent environment variables (uppercase, underscored —
+e.g., `NAMESPACE`, `IMAGE_TAG`, `WVA_REPO_PATH`) are also accepted for
+backward compatibility, but flags take precedence.
 
 ## Examples
 
 Pin a specific WVA version:
 
 ```shell
-WVA_REPO_REF=v0.3.0 ./test/e2e/demo-fma-wva/demo-fma-wva-ocp.sh
+./test/e2e/demo-fma-wva/demo-fma-wva-ocp.sh --wva-repo-ref v0.3.0
 ```
 
 Use a WVA fork:
 
 ```shell
-WVA_REPO_URL=https://github.com/myorg/wva-fork \
-WVA_REPO_REF=feature-branch \
-  ./test/e2e/demo-fma-wva/demo-fma-wva-ocp.sh
+./test/e2e/demo-fma-wva/demo-fma-wva-ocp.sh \
+  --wva-repo-url https://github.com/myorg/wva-fork \
+  --wva-repo-ref feature-branch
 ```
 
 Deploy a different model:
 
 ```shell
-MODEL=meta-llama/Llama-3.1-8B-Instruct \
-HF_TOKEN=hf_xxx \
-  ./test/e2e/demo-fma-wva/demo-fma-wva-ocp.sh
+./test/e2e/demo-fma-wva/demo-fma-wva-ocp.sh \
+  --model meta-llama/Llama-3.1-8B-Instruct \
+  --hf-token hf_xxx
 ```
 
 Use an existing WVA checkout instead of the auto-clone:
 
 ```shell
-WVA_REPO_PATH=/path/to/my/wva-checkout \
-  ./test/e2e/demo-fma-wva/demo-fma-wva-ocp.sh
+./test/e2e/demo-fma-wva/demo-fma-wva-ocp.sh \
+  --wva-repo-path /path/to/my/wva-checkout
 ```
 
 ## Troubleshooting
@@ -118,6 +129,6 @@ verify the launcher is bound (has the `dual-pods.llm-d.ai/dual` label set).
 Don't add the label to `LauncherConfig.spec.podTemplate.metadata.labels` —
 it will collide with ISC-applied labels during binding.
 
-**Cleanup says "WVA_REPO_PATH directory does not exist" with a weird path**
-You probably typed `WVA_REPO_PATH=` twice on the command line. Set it once,
-or unset it and let the script auto-clone.
+**Unknown flag error**
+The scripts reject unknown flags. Check spelling and run with `--help` for
+the canonical flag names.

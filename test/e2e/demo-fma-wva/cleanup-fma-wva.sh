@@ -4,7 +4,7 @@
 #
 # By default removes FMA objects, WVA objects, HPA, and FMA controllers but keeps
 # the namespace, CRDs, EPP, and WVA controller.
-# Set FULL_CLEANUP=true to also remove namespace, node labels, WVA controller,
+# Pass --full-cleanup to also remove namespace, node labels, WVA controller,
 # and the namespace-scoped EPP.
 #
 # Prerequisites:
@@ -12,23 +12,69 @@
 #   - helm  (used on the default path to uninstall the FMA Helm release)
 #   - jq    (used on the default path to surgically strip dual-pods finalizers
 #            from pods, preserving any other finalizers)
-#   - git   (only required when FULL_CLEANUP=true, to clone the WVA repo)
+#   - git   (only required when --full-cleanup is passed, to clone the WVA repo)
 #
-# When FULL_CLEANUP=true, the workload-variant-autoscaler (WVA) repo is
-# auto-cloned to $WVA_REPO_PATH if not already present. To use an existing
-# checkout, set WVA_REPO_PATH to its path.
+# When --full-cleanup is passed, the workload-variant-autoscaler (WVA) repo is
+# auto-cloned to --wva-repo-path if not already present. To use an existing
+# checkout, pass --wva-repo-path /path/to/checkout.
 #
-# Optional environment variables:
-#   NAMESPACE          - target namespace (default: fma-wva-demo)
-#   FULL_CLEANUP       - if "true", also delete namespace, node labels, WVA controller, EPP (default: false)
-#   WVA_REPO_PATH      - path to WVA repo (default: ~/.cache/llm-d-fma/workload-variant-autoscaler)
-#   WVA_REPO_URL       - WVA git URL (default: https://github.com/llm-d/llm-d-workload-variant-autoscaler)
-#   WVA_REPO_REF       - WVA git ref/branch/tag (default: main)
+# Run with --help for the full list of flags.
 
 set -euo pipefail
 
+# ----------------------------------------------------------------------------
+# CLI parsing — flags are the primary interface; matching env vars are honored
+# as a fallback for backward compatibility but flags take precedence.
+# ----------------------------------------------------------------------------
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") [OPTIONS]
+
+Tears down resources created by demo-fma-wva-ocp.sh.
+
+Options:
+  -n, --namespace NAME       Target namespace (default: fma-wva-demo)
+  -f, --full-cleanup         Also remove namespace, node labels, WVA, EPP
+      --wva-repo-path PATH   Path to WVA repo (default: <repo-root>/.wva-checkout)
+      --wva-repo-url URL     WVA git URL
+                             (default: https://github.com/llm-d/llm-d-workload-variant-autoscaler)
+      --wva-repo-ref REF     WVA git ref/branch/tag (default: main)
+  -h, --help                 Show this help and exit
+
+Environment variables (NAMESPACE, FULL_CLEANUP, WVA_REPO_PATH, WVA_REPO_URL,
+WVA_REPO_REF) are also accepted for backward compatibility, but flags take
+precedence.
+EOF
+}
+
+# Seed defaults from env vars (so existing callers using env vars still work).
 NAMESPACE="${NAMESPACE:-fma-wva-demo}"
 FULL_CLEANUP="${FULL_CLEANUP:-false}"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -n|--namespace)
+            [[ $# -ge 2 ]] || { echo "ERROR: $1 requires an argument" >&2; exit 2; }
+            NAMESPACE="$2"; shift 2 ;;
+        -f|--full-cleanup)
+            FULL_CLEANUP=true; shift ;;
+        --wva-repo-path)
+            [[ $# -ge 2 ]] || { echo "ERROR: $1 requires an argument" >&2; exit 2; }
+            WVA_REPO_PATH="$2"; shift 2 ;;
+        --wva-repo-url)
+            [[ $# -ge 2 ]] || { echo "ERROR: $1 requires an argument" >&2; exit 2; }
+            WVA_REPO_URL="$2"; shift 2 ;;
+        --wva-repo-ref)
+            [[ $# -ge 2 ]] || { echo "ERROR: $1 requires an argument" >&2; exit 2; }
+            WVA_REPO_REF="$2"; shift 2 ;;
+        -h|--help)
+            usage; exit 0 ;;
+        *)
+            echo "ERROR: Unknown option: $1" >&2
+            usage >&2
+            exit 2 ;;
+    esac
+done
 
 echo "========================================="
 echo "  FMA + WVA Demo Cleanup"
@@ -131,8 +177,12 @@ if [ "$FULL_CLEANUP" = "true" ]; then
 
     # Resolve WVA repo (auto-clone if not present). Fail loudly only if the
     # path can't be obtained at all, so the WVA/EPP undeploy steps don't get
-    # silently skipped while the summary lies about success.
-    WVA_REPO_PATH="${WVA_REPO_PATH:-$HOME/.cache/llm-d-fma/workload-variant-autoscaler}"
+    # silently skipped while the summary lies about success. The default keeps
+    # the clone under the FMA repo (not $HOME), so the script doesn't reach
+    # outside its working tree without explicit user intent.
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+    WVA_REPO_PATH="${WVA_REPO_PATH:-$REPO_ROOT/.wva-checkout}"
     WVA_REPO_URL="${WVA_REPO_URL:-https://github.com/llm-d/llm-d-workload-variant-autoscaler}"
     WVA_REPO_REF="${WVA_REPO_REF:-main}"
 
