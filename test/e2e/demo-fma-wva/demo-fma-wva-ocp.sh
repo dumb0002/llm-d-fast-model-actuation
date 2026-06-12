@@ -37,7 +37,7 @@ FMA / cluster options:
   -n, --namespace NAME              Target namespace (default: fma-wva-demo)
       --container-img-reg URL       FMA image registry
                                     (default: ghcr.io/llm-d-incubation/llm-d-fast-model-actuation)
-      --image-tag TAG               FMA image tag (default: v0.6.0-alpha.12)
+      --image-tag TAG               FMA image tag (default: v0.6.0-alpha.13)
       --launcher-image IMG          Launcher image
                                     (default: <container-img-reg>/launcher:<image-tag>)
       --requester-image IMG         Requester image
@@ -73,7 +73,7 @@ EOF
 # Seed defaults from env vars (so existing callers using env vars still work).
 NAMESPACE="${NAMESPACE:-fma-wva-demo}"
 CONTAINER_IMG_REG="${CONTAINER_IMG_REG:-ghcr.io/llm-d-incubation/llm-d-fast-model-actuation}"
-IMAGE_TAG="${IMAGE_TAG:-v0.6.0-alpha.12}"
+IMAGE_TAG="${IMAGE_TAG:-v0.6.0-alpha.13}"
 LAUNCHER_IMAGE="${LAUNCHER_IMAGE:-}"
 REQUESTER_IMAGE="${REQUESTER_IMAGE:-}"
 MODEL="${MODEL:-HuggingFaceTB/SmolLM2-360M-Instruct}"
