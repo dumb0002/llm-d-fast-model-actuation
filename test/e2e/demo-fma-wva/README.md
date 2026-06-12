@@ -115,13 +115,13 @@ Use an existing WVA checkout instead of the auto-clone:
 
 ## Troubleshooting
 
-**`VariantAutoscaling` shows `METRICSREADY=False`**
+### `VariantAutoscaling` shows `METRICSREADY=False`
 WVA needs traffic to compute saturation. With zero requests, all `vllm:*`
 saturation metrics stay at 0 and WVA correctly reports "no signal." Send
 some inference requests through the gateway and wait one reconcile cycle
 (~30s).
 
-**Launcher pod missing the `llm-d.ai/variant` label**
+### Launcher pod missing the `llm-d.ai/variant` label
 The `llm-d.ai/variant` label is applied from
 `InferenceServerConfig.spec.modelServerConfig.labels` when a requester binds
 to a launcher. Unbound (idle) launchers won't carry it. Check the ISC, and
@@ -129,6 +129,6 @@ verify the launcher is bound (has the `dual-pods.llm-d.ai/dual` label set).
 Don't add the label to `LauncherConfig.spec.podTemplate.metadata.labels` —
 it will collide with ISC-applied labels during binding.
 
-**Unknown flag error**
+### Unknown flag error
 The scripts reject unknown flags. Check spelling and run with `--help` for
 the canonical flag names.
