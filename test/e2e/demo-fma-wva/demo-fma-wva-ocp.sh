@@ -10,7 +10,7 @@
 #   - This repo (llm-d-incubation/llm-d-fast-model-actuation) cloned locally
 #   - oc CLI authenticated to an OCP cluster with GPU nodes
 #   - helm, kubectl, make, git installed
-#   - Container images already pushed to registry (see --container-img-reg)
+#   - Container images already pushed to registry (see --fma-image-registry)
 #
 # The workload-variant-autoscaler (WVA) repo is auto-cloned to --wva-repo-path
 # if not already present. To use an existing checkout, pass --wva-repo-path
@@ -35,13 +35,13 @@ Deploys FMA + WVA + llm-d components in the same namespace.
 
 FMA / cluster options:
   -n, --namespace NAME              Target namespace (default: fma-wva-demo)
-      --container-img-reg URL       FMA image registry
+      --fma-image-registry URL      FMA image registry
                                     (default: ghcr.io/llm-d-incubation/llm-d-fast-model-actuation)
-      --image-tag TAG               FMA image tag (default: v0.6.0-alpha.13)
-      --launcher-image IMG          Launcher image
-                                    (default: <container-img-reg>/launcher:<image-tag>)
-      --requester-image IMG         Requester image
-                                    (default: <container-img-reg>/requester:<image-tag>)
+      --fma-image-tag TAG           FMA image tag (default: v0.6.0-alpha.13)
+      --fma-launcher-image IMG      Launcher image
+                                    (default: <fma-image-registry>/launcher:<fma-image-tag>)
+      --fma-requester-image IMG     Requester image
+                                    (default: <fma-image-registry>/requester:<fma-image-tag>)
       --model NAME                  vLLM model (default: HuggingFaceTB/SmolLM2-360M-Instruct)
       --gpu-node NODE               Node for LPP (default: first node with
                                     nvidia.com/gpu.present=true)
@@ -99,26 +99,46 @@ need_arg() {
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        -n|--namespace)              need_arg "$@"; NAMESPACE="$2"; shift 2 ;;
-        --container-img-reg)         need_arg "$@"; CONTAINER_IMG_REG="$2"; shift 2 ;;
-        --image-tag)                 need_arg "$@"; IMAGE_TAG="$2"; shift 2 ;;
-        --launcher-image)            need_arg "$@"; LAUNCHER_IMAGE="$2"; shift 2 ;;
-        --requester-image)           need_arg "$@"; REQUESTER_IMAGE="$2"; shift 2 ;;
-        --model)                     need_arg "$@"; MODEL="$2"; shift 2 ;;
-        --gpu-node)                  need_arg "$@"; GPU_NODE="$2"; shift 2 ;;
-        --hf-token)                  need_arg "$@"; HF_TOKEN="$2"; shift 2 ;;
-        --wva-repo-path)             need_arg "$@"; WVA_REPO_PATH="$2"; shift 2 ;;
-        --wva-repo-url)              need_arg "$@"; WVA_REPO_URL="$2"; shift 2 ;;
-        --wva-repo-ref)              need_arg "$@"; WVA_REPO_REF="$2"; shift 2 ;;
-        --wva-image-repo)            need_arg "$@"; WVA_IMAGE_REPO="$2"; shift 2 ;;
-        --wva-image-tag)             need_arg "$@"; WVA_IMAGE_TAG="$2"; shift 2 ;;
-        --controller-instance)       need_arg "$@"; CONTROLLER_INSTANCE="$2"; shift 2 ;;
-        --monitoring-namespace)      need_arg "$@"; MONITORING_NAMESPACE="$2"; shift 2 ;;
-        --llm-d-release)             need_arg "$@"; LLM_D_RELEASE="$2"; shift 2 ;;
-        --gaie-version)              need_arg "$@"; GAIE_VERSION="$2"; shift 2 ;;
-        --deploy-prometheus)         DEPLOY_PROMETHEUS=true; shift ;;
-        --deploy-prometheus-adapter) DEPLOY_PROMETHEUS_ADAPTER=true; shift ;;
-        -h|--help)                   usage; exit 0 ;;
+        -n|--namespace)
+            need_arg "$@"; NAMESPACE="$2"; shift 2 ;;
+        --fma-image-registry)
+            need_arg "$@"; CONTAINER_IMG_REG="$2"; shift 2 ;;
+        --fma-image-tag)
+            need_arg "$@"; IMAGE_TAG="$2"; shift 2 ;;
+        --fma-launcher-image)
+            need_arg "$@"; LAUNCHER_IMAGE="$2"; shift 2 ;;
+        --fma-requester-image)
+            need_arg "$@"; REQUESTER_IMAGE="$2"; shift 2 ;;
+        --model)
+            need_arg "$@"; MODEL="$2"; shift 2 ;;
+        --gpu-node)
+            need_arg "$@"; GPU_NODE="$2"; shift 2 ;;
+        --hf-token)
+            need_arg "$@"; HF_TOKEN="$2"; shift 2 ;;
+        --wva-repo-path)
+            need_arg "$@"; WVA_REPO_PATH="$2"; shift 2 ;;
+        --wva-repo-url)
+            need_arg "$@"; WVA_REPO_URL="$2"; shift 2 ;;
+        --wva-repo-ref)
+            need_arg "$@"; WVA_REPO_REF="$2"; shift 2 ;;
+        --wva-image-repo)
+            need_arg "$@"; WVA_IMAGE_REPO="$2"; shift 2 ;;
+        --wva-image-tag)
+            need_arg "$@"; WVA_IMAGE_TAG="$2"; shift 2 ;;
+        --controller-instance)
+            need_arg "$@"; CONTROLLER_INSTANCE="$2"; shift 2 ;;
+        --monitoring-namespace)
+            need_arg "$@"; MONITORING_NAMESPACE="$2"; shift 2 ;;
+        --llm-d-release)
+            need_arg "$@"; LLM_D_RELEASE="$2"; shift 2 ;;
+        --gaie-version)
+            need_arg "$@"; GAIE_VERSION="$2"; shift 2 ;;
+        --deploy-prometheus)
+            DEPLOY_PROMETHEUS=true; shift ;;
+        --deploy-prometheus-adapter)
+            DEPLOY_PROMETHEUS_ADAPTER=true; shift ;;
+        -h|--help)
+            usage; exit 0 ;;
         *)
             echo "ERROR: Unknown option: $1" >&2
             usage >&2
@@ -126,7 +146,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Compute derived defaults after parsing (so --container-img-reg / --image-tag
+# Compute derived defaults after parsing (so --fma-image-registry / --fma-image-tag
 # can flow into LAUNCHER_IMAGE / REQUESTER_IMAGE if those weren't set explicitly).
 LAUNCHER_IMAGE="${LAUNCHER_IMAGE:-${CONTAINER_IMG_REG}/launcher:${IMAGE_TAG}}"
 REQUESTER_IMAGE="${REQUESTER_IMAGE:-${CONTAINER_IMG_REG}/requester:${IMAGE_TAG}}"

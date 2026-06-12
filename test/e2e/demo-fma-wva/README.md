@@ -17,7 +17,7 @@ for the full list of options.
 ## Versioning
 
 FMA and WVA release independently, so incompatibilities are possible. The
-defaults pin a known-good pair: FMA `--image-tag v0.6.0-alpha.12` + WVA
+defaults pin a known-good pair: FMA `--fma-image-tag v0.6.0-alpha.13` + WVA
 `--wva-repo-ref main`. If you change one, test the pair.
 
 ## Prerequisites
@@ -71,8 +71,8 @@ across namespaces. Delete them by hand if you want a complete wipe.
 | `--wva-repo-path PATH` | `<repo-root>/.wva-checkout` | both |
 | `--wva-repo-url URL` | `https://github.com/llm-d/llm-d-workload-variant-autoscaler` | both |
 | `--wva-repo-ref REF` | `main` | both |
-| `--container-img-reg URL` | `ghcr.io/llm-d-incubation/llm-d-fast-model-actuation` | deploy |
-| `--image-tag TAG` | `v0.6.0-alpha.12` | deploy |
+| `--fma-image-registry URL` | `ghcr.io/llm-d-incubation/llm-d-fast-model-actuation` | deploy |
+| `--fma-image-tag TAG` | `v0.6.0-alpha.13` | deploy |
 | `--model NAME` | `HuggingFaceTB/SmolLM2-360M-Instruct` | deploy |
 | `--gpu-node NODE` | first node with `nvidia.com/gpu.present=true` | deploy |
 | `--hf-token TOKEN` | (unset) | deploy (if model is gated) |
