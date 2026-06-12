@@ -8,11 +8,9 @@
 # and the namespace-scoped EPP.
 #
 # Prerequisites:
-#   - oc/kubectl authenticated
-#   - helm  (used on the default path to uninstall the FMA Helm release)
-#   - jq    (used on the default path to surgically strip dual-pods finalizers
-#            from pods, preserving any other finalizers)
-#   - git   (only required when --full-cleanup is passed, to clone the WVA repo)
+#   - oc authenticated to an OpenShift cluster
+#   - helm, kubectl, jq on $PATH
+#   - git on $PATH (only required when --full-cleanup is passed, to clone WVA)
 #
 # When --full-cleanup is passed, the workload-variant-autoscaler (WVA) repo is
 # auto-cloned to --wva-repo-path if not already present. To use an existing

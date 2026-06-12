@@ -33,7 +33,10 @@ See the "Pin all components" example below for a fully-pinned invocation.
 ## Prerequisites
 
 - `oc` authenticated to an OpenShift cluster with GPU nodes
-- `helm`, `kubectl`, `make`, `git`, `jq`, `yq` ([mikefarah/yq](https://github.com/mikefarah/yq)) on `$PATH`
+- For **deploy** (`demo-fma-wva-ocp.sh`):
+  `helm`, `kubectl`, `make`, `git`, `jq`, `yq` ([mikefarah/yq](https://github.com/mikefarah/yq)) on `$PATH`
+- For **cleanup** (`cleanup-fma-wva.sh`):
+  `helm`, `kubectl`, `jq` on `$PATH` (plus `git` if `--full-cleanup` is used)
 
 ## Deploy
 

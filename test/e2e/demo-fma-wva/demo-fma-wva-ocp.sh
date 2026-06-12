@@ -4,12 +4,11 @@
 #
 # Idempotent: checks each component before deploying, skips if already present.
 # Run from the root of the llm-d-fast-model-actuation repository.
-# Deploys the version of FMA that is checked out locally.
 #
 # Prerequisites:
 #   - This repo (llm-d-incubation/llm-d-fast-model-actuation) cloned locally
-#   - oc CLI authenticated to an OCP cluster with GPU nodes
-#   - helm, kubectl, make, git installed
+#   - oc authenticated to an OpenShift cluster with GPU nodes
+#   - helm, kubectl, make, git, jq, yq (mikefarah/yq) on $PATH
 #   - Container images already pushed to registry (see --fma-image-registry)
 #
 # The workload-variant-autoscaler (WVA) repo is auto-cloned to --wva-repo-path
