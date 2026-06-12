@@ -10,8 +10,9 @@
 # Prerequisites:
 #   - oc/kubectl authenticated
 #   - helm  (used on the default path to uninstall the FMA Helm release)
-#   - git, jq  (only required when FULL_CLEANUP=true; jq is used to strip
-#               namespace finalizers if the namespace hangs in Terminating)
+#   - jq    (used on the default path to surgically strip dual-pods finalizers
+#            from pods, preserving any other finalizers)
+#   - git   (only required when FULL_CLEANUP=true, to clone the WVA repo)
 #
 # When FULL_CLEANUP=true, the workload-variant-autoscaler (WVA) repo is
 # auto-cloned to $WVA_REPO_PATH if not already present. To use an existing
@@ -45,21 +46,29 @@ else
     SKIP_NS_OPS=false
 fi
 
-# Helper: strip dual-pods finalizers from all pods in the namespace.
-# Without this, deleting controllers before pods leaves dangling finalizers
-# that block pod (and namespace) deletion forever.
+# Helper: strip ONLY dual-pods.llm-d.ai/* finalizers from pods in the namespace,
+# preserving any other finalizers (sidecars, operators, etc.) 
 strip_dual_pods_finalizers() {
     local pods
     pods=$(kubectl get pods -n "$NAMESPACE" -o name 2>/dev/null || true)
     [ -z "$pods" ] && return 0
     while read -r pod; do
         [ -z "$pod" ] && continue
-        local fin
-        fin=$(kubectl get "$pod" -n "$NAMESPACE" -o jsonpath='{.metadata.finalizers}' 2>/dev/null || echo "")
-        if echo "$fin" | grep -q "dual-pods.llm-d.ai"; then
-            echo "  Removing finalizers from $pod"
+        # Build the new finalizer list: keep everything except dual-pods.llm-d.ai/*.
+        # If jq returns nothing (no finalizers at all) skip the patch.
+        local new_fin
+        new_fin=$(kubectl get "$pod" -n "$NAMESPACE" -o json 2>/dev/null \
+            | jq -c '[.metadata.finalizers[]? | select(startswith("dual-pods.llm-d.ai/") | not)]' 2>/dev/null) || continue
+        # Only patch if the pod actually has a dual-pods finalizer to strip.
+        local had_fma
+        had_fma=$(kubectl get "$pod" -n "$NAMESPACE" -o json 2>/dev/null \
+            | jq -r '[.metadata.finalizers[]? | select(startswith("dual-pods.llm-d.ai/"))] | length' 2>/dev/null) || continue
+        if [ "${had_fma:-0}" -gt 0 ]; then
+            echo "  Removing dual-pods finalizers from $pod (preserving $((${#new_fin} > 2 ? 1 : 0)) others)"
+            # An empty array [] tells kubectl "remove all" via merge patch; that's
+            # the desired behavior when the only finalizers were dual-pods ones.
             kubectl patch "$pod" -n "$NAMESPACE" --type=merge \
-                -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+                -p "{\"metadata\":{\"finalizers\":${new_fin}}}" 2>/dev/null || true
         fi
     done <<< "$pods"
 }
