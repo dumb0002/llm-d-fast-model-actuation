@@ -58,8 +58,6 @@ WVA options:
                                     (default: openshift-user-workload-monitoring)
       --llm-d-release VER           llm-d release version (default: v0.7.0)
       --gaie-version VER            GAIE version (default: v1.5.0)
-      --deploy-prometheus           Deploy Prometheus instead of using cluster monitoring
-      --deploy-prometheus-adapter   Deploy Prometheus adapter
 
   -h, --help                        Show this help and exit
 
@@ -88,8 +86,11 @@ CONTROLLER_INSTANCE="${CONTROLLER_INSTANCE:-fma-wva}"
 MONITORING_NAMESPACE="${MONITORING_NAMESPACE:-openshift-user-workload-monitoring}"
 LLM_D_RELEASE="${LLM_D_RELEASE:-v0.7.0}"
 GAIE_VERSION="${GAIE_VERSION:-v1.5.0}"
-DEPLOY_PROMETHEUS="${DEPLOY_PROMETHEUS:-false}"
-DEPLOY_PROMETHEUS_ADAPTER="${DEPLOY_PROMETHEUS_ADAPTER:-false}"
+
+# Prometheus + adapter are NOT deployed by this script; OpenShift's built-in
+# user-workload monitoring is assumed. Hard-coded; not user-configurable.
+DEPLOY_PROMETHEUS=false
+DEPLOY_PROMETHEUS_ADAPTER=false
 
 # Helper for required-arg flags
 need_arg() {
@@ -132,10 +133,6 @@ while [[ $# -gt 0 ]]; do
             need_arg "$@"; LLM_D_RELEASE="$2"; shift 2 ;;
         --gaie-version)
             need_arg "$@"; GAIE_VERSION="$2"; shift 2 ;;
-        --deploy-prometheus)
-            DEPLOY_PROMETHEUS=true; shift ;;
-        --deploy-prometheus-adapter)
-            DEPLOY_PROMETHEUS_ADAPTER=true; shift ;;
         -h|--help)
             usage; exit 0 ;;
         *)
