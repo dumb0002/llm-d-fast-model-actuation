@@ -16,9 +16,19 @@ for the full list of options.
 
 ## Versioning
 
-FMA and WVA release independently, so incompatibilities are possible. The
-defaults pin a known-good pair: FMA `--fma-image-tag v0.6.0-alpha.13` + WVA
-`--wva-repo-ref main`. If you change one, test the pair.
+FMA, WVA, and GIE/llm-d release independently, so incompatibilities are
+possible. The defaults pin a known-good combination. If you change one,
+test the others alongside it.
+
+| Component | Flag | Default |
+|---|---|---|
+| FMA controllers + launcher/requester images | `--fma-image-tag` | `v0.6.0-alpha.13` |
+| WVA source (git ref) | `--wva-repo-ref` | `main` |
+| WVA controller image | `--wva-image-tag` | `v4` |
+| GIE (Gateway API Inference Extension) | `--gaie-version` | `v1.5.0` |
+| llm-d release (EPP/Gateway) | `--llm-d-release` | `v0.7.0` |
+
+See the "Pin all components" example below for a fully-pinned invocation.
 
 ## Prerequisites
 
@@ -111,6 +121,17 @@ Use an existing WVA checkout instead of the auto-clone:
 ```shell
 ./test/e2e/demo-fma-wva/demo-fma-wva-ocp.sh \
   --wva-repo-path /path/to/my/wva-checkout
+```
+
+Pin all components (FMA + WVA + GIE + llm-d) to specific versions:
+
+```shell
+./test/e2e/demo-fma-wva/demo-fma-wva-ocp.sh \
+  --fma-image-tag v0.6.0-alpha.13 \
+  --wva-repo-ref v0.3.0 \
+  --wva-image-tag v0.3.0 \
+  --gaie-version v1.5.0 \
+  --llm-d-release v0.7.0
 ```
 
 ## Troubleshooting
