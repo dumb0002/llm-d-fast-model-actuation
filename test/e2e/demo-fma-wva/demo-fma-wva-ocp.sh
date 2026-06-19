@@ -62,7 +62,6 @@ WVA options:
                                     (default: https://github.com/llm-d/llm-d-workload-variant-autoscaler)
       --wva-image-repo URL          WVA image repository
                                     (default: ghcr.io/llm-d/llm-d-workload-variant-autoscaler)
-      --controller-instance NAME    WVA controller instance name (default: fma-wva)
       --monitoring-namespace NAME   Monitoring namespace
                                     (default: openshift-user-workload-monitoring)
       --llm-d-release VER           llm-d release version (default: v0.7.0)
@@ -95,7 +94,6 @@ WVA_REPO_URL="${WVA_REPO_URL:-https://github.com/llm-d/llm-d-workload-variant-au
 # install scripts that the WVA repo provides) and the controller image tag.
 WVA_VERSION="${WVA_VERSION:-v0.8.0-rc4}"
 WVA_IMAGE_REPO="${WVA_IMAGE_REPO:-ghcr.io/llm-d/llm-d-workload-variant-autoscaler}"
-CONTROLLER_INSTANCE="${CONTROLLER_INSTANCE:-fma-wva}"
 MONITORING_NAMESPACE="${MONITORING_NAMESPACE:-openshift-user-workload-monitoring}"
 LLM_D_RELEASE="${LLM_D_RELEASE:-v0.7.0}"
 GAIE_VERSION="${GAIE_VERSION:-v1.5.0}"
@@ -140,8 +138,6 @@ while [[ $# -gt 0 ]]; do
             need_arg "$@"; WVA_REPO_URL="$2"; shift 2 ;;
         --wva-image-repo)
             need_arg "$@"; WVA_IMAGE_REPO="$2"; shift 2 ;;
-        --controller-instance)
-            need_arg "$@"; CONTROLLER_INSTANCE="$2"; shift 2 ;;
         --monitoring-namespace)
             need_arg "$@"; MONITORING_NAMESPACE="$2"; shift 2 ;;
         --llm-d-release)
@@ -293,7 +289,7 @@ else
         # Same-name variables can simply be exported (no need to repeat the
         # value). The renamed/derived ones still need an assignment.
         export HF_TOKEN DEPLOY_PROMETHEUS DEPLOY_PROMETHEUS_ADAPTER \
-               MONITORING_NAMESPACE CONTROLLER_INSTANCE \
+               MONITORING_NAMESPACE \
                WVA_IMAGE_REPO WVA_IMAGE_TAG
         export LLMD_NS="$NAMESPACE"
         export WVA_NS="$NAMESPACE"
@@ -389,7 +385,7 @@ spec:
       llm-d.ai/inference-serving: "true"
       llm-d.ai/guide: "optimized-baseline"
       llm-d.ai/model: "SmolLM2-360M-Instruct"
-      llm-d.ai/variant: wva-fma-va
+      llm-d.ai/variant: fma-requester
     annotations:
       description: "FMA ISC - ${MODEL}"
   launcherConfigName: lc-fma
@@ -456,7 +452,7 @@ spec:
     metadata:
       labels:
         app: fma-requester
-        llm-d.ai/variant: wva-fma-va
+        llm-d.ai/variant: fma-requester
       annotations:
         dual-pods.llm-d.ai/admin-port: "8081"
         dual-pods.llm-d.ai/inference-server-config: "isc-smol"
@@ -528,7 +524,7 @@ EOF
 fi
 
 
-step "WVA Objects (VariantAutoscaling, HPA)"
+step "WVA Autoscaling (annotation-based HPA, VariantAutoscaling-free)"
 
 # Wait for the requester Deployment to become Available — i.e., the
 # dual-pods controller has bound the requester to a launcher AND the bound
@@ -540,58 +536,44 @@ kubectl wait --for=condition=Available deployment/fma-requester \
     -n "$NAMESPACE" --timeout="$WAIT_REQUESTER_TIMEOUT" 2>/dev/null || \
     echo "  Deployment/fma-requester is not Available within ${WAIT_REQUESTER_TIMEOUT} — proceeding anyway"
 
-if kubectl get variantautoscaling wva-fma-va -n "$NAMESPACE" &>/dev/null; then
-    echo "  WVA objects already exist"
+# Modern WVA uses annotation-based discovery: WVA finds the HPA via the
+# llm-d.ai/managed annotation, computes desired replicas, and publishes
+# wva_desired_replicas{variant_name=<deployment>, exported_namespace=<ns>}
+# to Prometheus. The HPA reads that external metric to scale the deployment.
+# No VariantAutoscaling CR required (it's the legacy path; see config/samples
+# in the WVA repo for both shapes).
+if kubectl get hpa fma-requester-hpa -n "$NAMESPACE" &>/dev/null; then
+    echo "  WVA-managed HPA already exists"
 else
-    echo "  Creating WVA VariantAutoscaling..."
-    kubectl apply -f - <<EOF
-apiVersion: llmd.ai/v1alpha1
-kind: VariantAutoscaling
-metadata:
-  labels:
-    wva.llmd.ai/controller-instance: ${CONTROLLER_INSTANCE}
-    inference.optimization/acceleratorName: nvidia-gpu
-  name: wva-fma-va
-  namespace: ${NAMESPACE}
-spec:
-  maxReplicas: 2
-  minReplicas: 0
-  modelID: ${MODEL}
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: fma-requester
-  variantCost: "10.0"
-EOF
-    echo "  VariantAutoscaling created"
-fi
-
-if kubectl get hpa wva-fma-hpa -n "$NAMESPACE" &>/dev/null; then
-    echo "  WVA HPA already exists"
-else
-    echo "  Creating WVA HorizontalPodAutoscaler..."
+    echo "  Creating WVA-managed HorizontalPodAutoscaler..."
     kubectl apply -f - <<EOF
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: wva-fma-hpa
+  name: fma-requester-hpa
   namespace: ${NAMESPACE}
+  annotations:
+    # WVA opt-in annotations: WVA discovers HPAs carrying llm-d.ai/managed=true
+    # and publishes the wva_desired_replicas metric this HPA consumes below.
+    llm-d.ai/managed: "true"
+    llm-d.ai/model-id: "${MODEL}"
+    llm-d.ai/variant-cost: "10.0"
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
     name: fma-requester
   maxReplicas: 6
-  #minReplicas: 0  # Scale to zero is an alpha feature
+  # minReplicas: 0  # Scale to zero is an alpha feature
   behavior:
     scaleUp:
-      stabilizationWindowSeconds: 0  # Tune based on your needs
+      stabilizationWindowSeconds: 0
       policies:
       - type: Pods
         value: 10
         periodSeconds: 15
     scaleDown:
-      stabilizationWindowSeconds: 0  # Tune based on your needs
+      stabilizationWindowSeconds: 0
       policies:
       - type: Pods
         value: 10
@@ -603,9 +585,9 @@ spec:
         name: wva_desired_replicas
         selector:
           matchLabels:
-            variant_name: wva-fma-va
+            # WVA labels its emitted metric by the scale target's name and namespace.
+            variant_name: fma-requester
             exported_namespace: ${NAMESPACE}
-            controller_instance: ${CONTROLLER_INSTANCE}
       target:
         type: AverageValue
         averageValue: "1"
@@ -644,7 +626,7 @@ kubectl get inferenceserverconfig,launcherconfig,launcherpopulationpolicy -n "$N
 
 echo ""
 echo "  --- WVA Custom Resources ---"
-kubectl get variantautoscaling,hpa -n "$NAMESPACE" 2>/dev/null || true
+kubectl get hpa -n "$NAMESPACE" 2>/dev/null || true
 
 echo ""
 echo "  --- Monitoring Resources ---"
@@ -662,18 +644,17 @@ echo ""
 echo "  Namespace:           $NAMESPACE"
 echo "  GPU Node:            $GPU_NODE"
 echo "  Model:               $MODEL"
-echo "  Controller Instance: $CONTROLLER_INSTANCE"
 echo ""
 echo "  Components installed:"
 echo "    ✓ FMA CRDs and Controllers"
 echo "    ✓ WVA Controller (${WVA_IMAGE_REPO}:${WVA_IMAGE_TAG})"
 echo "    ✓ llm-d EPP (Gateway API + InferencePool)"
 echo "    ✓ FMA objects (ISC, LauncherConfig, LPP, Deployment, PodMonitor)"
-echo "    ✓ WVA objects (VariantAutoscaling, HPA)"
+echo "    ✓ WVA-managed HPA (annotation-based, no VariantAutoscaling)"
 echo ""
 echo "  Next steps:"
 echo "    - Check WVA metrics: kubectl get --raw /apis/external.metrics.k8s.io/v1beta1"
-echo "    - Check HPA status: kubectl get hpa wva-fma-hpa -n $NAMESPACE"
+echo "    - Check HPA status: kubectl get hpa fma-requester-hpa -n $NAMESPACE"
 echo "    - Monitor pods: kubectl get pods -n $NAMESPACE -w"
 echo "    - View WVA logs: kubectl logs -n $NAMESPACE -l app.kubernetes.io/name=workload-variant-autoscaler"
 echo "    - View FMA logs: kubectl logs -n $NAMESPACE -l app.kubernetes.io/part-of=fma"

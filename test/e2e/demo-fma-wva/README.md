@@ -4,9 +4,10 @@ Two scripts to deploy and tear down a working end-to-end demo of FMA + WVA + llm
 single OpenShift namespace. The scripts install the platform components
 (controllers, CRDs, RBAC, EPP/Gateway) **and** create a concrete workload
 that exercises them (an `InferenceServerConfig`, `LauncherConfig`,
-`LauncherPopulationPolicy`, requester `Deployment`, `VariantAutoscaling`,
-and a `HorizontalPodAutoscaler` that consumes WVA's `wva_desired_replicas`
-external metric to scale the requester `Deployment`).
+`LauncherPopulationPolicy`, requester `Deployment`, and a
+`HorizontalPodAutoscaler` annotated with `llm-d.ai/managed: "true"` so WVA
+discovers it and publishes the `wva_desired_replicas` external metric the
+HPA consumes to scale the deployment).
 
 | Script | Purpose |
 |---|---|
@@ -155,11 +156,15 @@ Pin all components (FMA + WVA + GIE + llm-d) to specific versions:
 
 ## Troubleshooting
 
-### `VariantAutoscaling` shows `METRICSREADY=False`
+### HPA shows `Unknown` for the `wva_desired_replicas` metric
 WVA needs traffic to compute saturation. With zero requests, all `vllm:*`
-saturation metrics stay at 0 and WVA correctly reports "no signal." Send
-some inference requests through the gateway and wait one reconcile cycle
-(~30s).
+saturation metrics stay at 0 and WVA emits no `wva_desired_replicas` value
+for the variant — so prometheus-adapter has nothing to surface, and the HPA
+shows the metric as `Unknown`. Send some inference requests through the
+gateway and wait one reconcile cycle (~30s). Check WVA picked up the HPA
+with `kubectl logs -n <ns> -l app.kubernetes.io/name=workload-variant-autoscaler`
+— the controller logs the HPAs it has discovered via the `llm-d.ai/managed`
+annotation.
 
 ### Launcher pod missing the `llm-d.ai/variant` label
 The `llm-d.ai/variant` label is applied from

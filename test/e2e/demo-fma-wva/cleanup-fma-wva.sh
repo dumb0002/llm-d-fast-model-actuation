@@ -118,23 +118,22 @@ strip_dual_pods_finalizers() {
 }
 
 if [ "$SKIP_NS_OPS" = "false" ]; then
-    # 1. WVA HPA first — stops WVA from scaling
-    echo "--- Deleting WVA HPA ---"
-    kubectl delete hpa wva-fma-hpa -n "$NAMESPACE" --ignore-not-found 2>/dev/null
+    # 1. WVA-managed HPA — stops WVA from scaling and removes the
+    #    annotation-based opt-in. There is no separate VariantAutoscaling CR
+    #    in the modern path; the HPA's llm-d.ai/managed annotation is what
+    #    WVA discovers, so deleting the HPA fully detaches this workload.
+    echo "--- Deleting WVA-managed HPA ---"
+    kubectl delete hpa fma-requester-hpa -n "$NAMESPACE" --ignore-not-found 2>/dev/null
 
-    # 2. WVA VariantAutoscaling — stops WVA controller from managing the deployment
-    echo "--- Deleting WVA VariantAutoscaling ---"
-    kubectl delete variantautoscaling wva-fma-va -n "$NAMESPACE" --ignore-not-found 2>/dev/null
-
-    # 3. Deployment — deletes any existing requester pods
+    # 2. Deployment — deletes any existing requester pods
     echo "--- Deleting Deployment ---"
     kubectl delete deployment fma-requester -n "$NAMESPACE" --ignore-not-found 2>/dev/null
 
-    # 4. Give the controllers a moment to process pending bind/unbind events
+    # 3. Give the controllers a moment to process pending bind/unbind events
     echo "--- Waiting for controllers to drain (10s) ---"
     sleep 10
 
-    # 5. FMA CRs. Delete the LPP first and pause: the populator skips
+    # 4. FMA CRs. Delete the LPP first and pause: the populator skips
     # reconciliation when the LauncherConfig is missing, so removing the LC
     # too soon strands launchers it should have scaled down.
     echo "--- Deleting LauncherPopulationPolicy ---"
@@ -144,25 +143,25 @@ if [ "$SKIP_NS_OPS" = "false" ]; then
     kubectl delete launcherconfig lc-fma -n "$NAMESPACE" --ignore-not-found 2>/dev/null
     kubectl delete inferenceserverconfig isc-smol -n "$NAMESPACE" --ignore-not-found 2>/dev/null
 
-    # 6. PodMonitor
+    # 5. PodMonitor
     echo "--- Deleting PodMonitor ---"
     kubectl delete podmonitor fma-launcher-monitor -n "$NAMESPACE" --ignore-not-found 2>/dev/null
 
     echo "--- Waiting for controllers to clean up resources (10s) ---"
     sleep 10
 
-    # 7. FMA controllers (Helm release).
+    # 6. FMA controllers (Helm release).
     echo "--- Uninstalling FMA controllers ---"
     helm uninstall fma -n "$NAMESPACE" 2>/dev/null || true
 
-    # 8. Recovery: strip leftover dual-pods finalizers. Only meaningful after
+    # 7. Recovery: strip leftover dual-pods finalizers. Only meaningful after
     # controller uninstall — otherwise the controller would re-add them.
     echo "--- Stripping dual-pods finalizers from any leftover pods ---"
     strip_dual_pods_finalizers
 
 fi
 
-# 9. Cluster-scoped FMA resources
+# 8. Cluster-scoped FMA resources
 echo "--- Deleting cluster-scoped FMA resources ---"
 kubectl delete clusterrolebinding fma-node-view --ignore-not-found 2>/dev/null
 kubectl delete clusterrole fma-node-view --ignore-not-found 2>/dev/null
